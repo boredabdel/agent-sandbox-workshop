@@ -2,15 +2,13 @@
 
 **Event:** Cloud Native Days Norway 2026 (Bergen)  
 **Speaker:** Abdel Sghiouar (Senior Cloud Developer Advocate @ Google | CNCF Ambassador)  
-**Format:** 2-Hour Hands-on Workshop | **Level:** Beginner  
-
 ---
 
 ## Abstract & Overview
 
 As AI agents evolve from simple chatbots into autonomous systems capable of generating and executing code and manipulating data, they introduce significant security and operational challenges. When an LLM writes and executes Python or shell code at runtime, **you are running untrusted, non-deterministic code inside your infrastructure**.
 
-In this hands-on workshop, you will build, scale, and harden an autonomous code-executing AI agent on Kubernetes using **[Agent Sandbox (`kubernetes-sigs/agent-sandbox`)](https://github.com/kubernetes-sigs/agent-sandbox)** and the **[Google Agent Development Kit (ADK)](https://google.github.io/adk-docs/)**:
+In this hands-on workshop, you will build, scale, and harden an autonomous code-executing AI agent on Kubernetes using **[Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)** and the **[Google Agent Development Kit (ADK)](https://google.github.io/adk-docs/)**:
 
 1. **Bridge VM Safety & Container Speed:** Use **gVisor (`runsc`)** as a user-space kernel runtime so untrusted agent code never touches the host node's Linux kernel.
 2. **Kubernetes-Native Lifecycle CRDs:** Orchestrate ephemeral execution environments using `Sandbox`, `SandboxTemplate`, `SandboxClaim`, and `SandboxWarmPool`.
@@ -30,7 +28,7 @@ flowchart LR
 
 ---
 
-## Workshop Agenda (2 Hours)
+## Workshop Agenda
 
 | Time | Module | Topics Covered |
 | :--- | :--- | :--- |
@@ -94,7 +92,7 @@ gcloud container clusters create-auto sandbox-lab \
 ```
 
 > [!TIP]
-> **Cluster provisioning takes ~5–8 minutes.** While GKE provisions the control plane in the background, your instructor will walk through the architecture of `kubernetes-sigs/agent-sandbox` and gVisor.
+> **Cluster provisioning takes ~5–8 minutes.** While GKE provisions the control plane in the background, your instructor will walk through the architecture of `agent-sandbox` and gVisor.
 
 <details>
 <summary><strong>Fallback Option (Only if Autopilot quota is unavailable in your region)</strong></summary>
@@ -137,9 +135,9 @@ cd ~/agent-sandbox-workshop
 
 ## Module 1: The Anatomy of Agent Sandbox & gVisor Isolation
 
-Standard Kubernetes primitives (`Deployment`, `StatefulSet`, `Job`) were designed for long-running microservices or batch pipelines—not for managing thousands of ephemeral, stateful, single-replica code-execution environments per user session.
+Standard Kubernetes primitives (`Deployment`, `StatefulSet`, `Job`) were designed for long-running microservices or batch pipelines, not for managing thousands of ephemeral, stateful, single-replica code-execution environments per user session.
 
-**Agent Sandbox (`kubernetes-sigs/agent-sandbox`)** introduces four Kubernetes Custom Resource Definitions (CRDs):
+**Agent Sandbox** introduces four Kubernetes Custom Resource Definitions (CRDs):
 
 | CRD | API Group | Purpose |
 | :--- | :--- | :--- |
@@ -175,11 +173,14 @@ sandboxtemplates.extensions.agents.x-k8s.io
 sandboxwarmpools.extensions.agents.x-k8s.io
 ```
 
+> [!NOTE]
+> On GKE Autopilot, scheduling the first pod triggers node auto-provisioning, which takes **60–90 seconds**. Subsequent pods scheduled onto existing capacity or claimed from a Warm Pool start in **under 1 second**.
+
 ### Step 1.2: Deploy a Standalone `Sandbox` with gVisor
 
 Why aren't standard containers enough for AI-generated code?
 * Standard containers (`runc`) **share the host node's Linux kernel**. A single kernel vulnerability (`dirtycow`, `io_uring`, `ebpf`, etc.) allows untrusted code inside a container to escape onto the Kubernetes node.
-* **gVisor (`runsc`)** provides an application kernel written in memory-safe Go that runs in user space. It intercepts over 200+ Linux system calls from the application—acting as a guest kernel boundary between the container and the host OS without the heavy boot overhead of a full VM.
+* **gVisor (`runsc`)** provides an application kernel written in memory-safe Go that runs in user space. It intercepts over 200+ Linux system calls from the application acting as a guest kernel boundary between the container and the host OS without the heavy boot overhead of a full VM.
 
 Let's deploy a standalone `Sandbox` resource configured with `runtimeClassName: gvisor`:
 
@@ -212,9 +213,6 @@ EOF
 kubectl apply -f ~/agent-sandbox-workshop/standalone-sandbox.yaml
 ```
 
-> [!NOTE]
-> On GKE Autopilot, scheduling the first pod triggers node auto-provisioning, which takes **60–90 seconds**. Subsequent pods scheduled onto existing capacity or claimed from a Warm Pool start in **under 1 second**.
-
 Wait for the `standalone-gvisor-sandbox` Pod to reach `Running`:
 
 ```bash
@@ -224,11 +222,14 @@ kubectl get sandbox,pod,svc standalone-gvisor-sandbox
 
 ### Step 1.3: Inspect the gVisor User-Space Kernel vs. Host Kernel
 
-Now let's run commands *inside* the `standalone-gvisor-sandbox` container and compare them against the `agent-sandbox-controller` container (which runs on the standard `runc` runtime):
+Now let's launch a temporary standard container (`runc`), run `uname -a` inside it, and compare its output against our `standalone-gvisor-sandbox` container:
 
 ```bash
+kubectl run standard-pod --image=busybox --restart=Never -- sleep 3600
+kubectl wait --for=condition=Ready pod/standard-pod --timeout=120s
+
 echo "=== 1. Standard Container (runc - shares Host Kernel) ==="
-kubectl exec -n agent-sandbox-system agent-sandbox-controller-0 -- uname -a
+kubectl exec standard-pod -- uname -a
 
 echo "=== 2. Agent Sandbox Container (gVisor - isolated User-Space Kernel) ==="
 kubectl exec standalone-gvisor-sandbox -- uname -a
@@ -238,7 +239,7 @@ kubectl exec standalone-gvisor-sandbox -- dmesg | head -n 6
 ```
 
 Look closely at the output:
-1. The standard container reports the real GKE host node Linux kernel (e.g., `Linux ... 6.12.94+ ...`).
+1. The `standard-pod` container reports the real GKE host node Linux kernel (e.g., `Linux standard-pod 6.6.x+ ...`).
 2. The `standalone-gvisor-sandbox` reports **`Linux standalone-gvisor-sandbox 4.4.0 #1 SMP ...`**—gVisor's virtualized syscall interface!
 3. Running `dmesg` inside the sandbox does **not** leak host kernel logs; instead, it displays gVisor's own boot sequence:
    ```text
@@ -249,9 +250,10 @@ Look closely at the output:
    [    0.887429] Feeding the init monster...
    ```
 
-Clean up the standalone demo sandbox before moving to Module 2:
+Clean up the temporary standard pod and standalone demo sandbox before moving to Module 2:
 
 ```bash
+kubectl delete pod standard-pod
 kubectl delete -f ~/agent-sandbox-workshop/standalone-sandbox.yaml
 ```
 
@@ -263,7 +265,7 @@ When an AI agent needs to run Python code during a conversation, waiting 30–60
 
 To solve this, we combine three components:
 1. **`SandboxTemplate`**: Defines the blueprint for our Python execution environment (pre-loaded with `pandas`, `scikit-learn`, `lightgbm`, and a FastAPI execution server on port `8888`).
-2. **`SandboxWarmPool`**: Keeps `N` pre-warmed gVisor Pods running at all times. When a `SandboxClaim` arrives, the controller **adopts an already-running Pod in `<1 second`** and immediately spawns a new standby Pod in the background to replenish the pool.
+2. **`SandboxWarmPool`**: Keeps `N` pre-warmed gVisor Pods running at all times. When a `SandboxClaim` arrives, the controller **adopts an already running Pod in `<1 second`** and immediately spawns a new standby Pod in the background to replenish the pool.
 3. **`SandboxRouter`**: A stateless internal HTTP reverse proxy that routes requests from our AI agent to the right sandbox Pod based on the `X-Sandbox-ID` header.
 
 ### Step 2.1: Create the `SandboxTemplate` and `SandboxWarmPool`
@@ -340,7 +342,7 @@ EOF
 kubectl apply -f ~/agent-sandbox-workshop/manual-claim.yaml
 ```
 
-Immediately inspect the `Sandbox`, the adopted Pod annotation, and the `Pods` list:
+Inspect the `Sandbox`, the adopted Pod annotation, and the `Pods` list:
 
 ```bash
 kubectl get sandboxclaims,sandboxes
@@ -504,7 +506,7 @@ def execute_python_in_sandbox(code: str) -> str:
 
 root_agent = Agent(
     name="DataScienceAgent",
-    model="gemini-2.5-flash",
+    model="gemini-3.1-flash-lite",
     instruction="""You are an expert data analyst and Kubernetes security tester.
 Whenever a user asks you to analyze data, compute metrics, or run a system/security check:
 1. Write a complete, self-contained Python script (using `pandas` or standard library modules).
@@ -522,7 +524,7 @@ Configure the `.env` file so ADK uses Vertex AI in your project:
 cat <<EOF > ~/agent-sandbox-workshop/root_agent/.env
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-GOOGLE_CLOUD_LOCATION=${REGION}
+GOOGLE_CLOUD_LOCATION=global
 EOF
 ```
 
@@ -534,15 +536,15 @@ Before packaging a container image, you can run the ADK Web UI directly in Cloud
 
    ```bash
    cd ~/agent-sandbox-workshop
-   adk web --host 0.0.0.0 --port 8080
+   adk web --host 0.0.0.0 --port 8080 --allow_origins "*"
    ```
 
 2. In the top-right corner of the Cloud Shell pane, click the **Web Preview** icon and select **Preview on port 8080**.
 3. In the ADK Web UI, select **`root_agent`** from the top-left dropdown and send the following prompt:
 
    > **Prompt:**  
-   > Here is our store inventory in CSV format. Using pandas, calculate the total inventory value for each item, the grand total across all items, and identify which item represents the highest share of total value:
    > ```
+   > Here is our store inventory in CSV format. Using pandas, calculate the total inventory value for each item, the grand total across all items, and identify which item represents the highest share of total value:
    > product,quantity,unit_price
    > Laptop,12,1350
    > Mechanical Keyboard,45,110
@@ -713,8 +715,8 @@ Let's block all sandbox egress to:
 2. **`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`** (RFC1918 internal cluster Pod/Service/Node networks)
 
 > [!IMPORTANT]
-> **Critical Label Lifecycle Detail:**  
-> While sitting in `SandboxWarmPool`, standby pods carry the label `agents.x-k8s.io/pool=<hash>`. The instant a pod is claimed by a `Sandbox`, the controller replaces that label with `agents.x-k8s.io/sandbox-name-hash=<hash>`.  
+> **Label Lifecycle Detail:**  
+> While sitting in `SandboxWarmPool`, standby pods carry the label `agents.x-k8s.io/pool=<hash>`. The moment a pod is claimed by a `Sandbox`, the controller replaces that label with `agents.x-k8s.io/sandbox-name-hash=<hash>`.  
 > Because warm-pool adoption happens in **under 100 milliseconds**, we apply our `NetworkPolicy` to **both** label selectors (`agents.x-k8s.io/pool` and `agents.x-k8s.io/sandbox-name-hash`). That way, the eBPF firewall is already attached while the pod sits in the warm pool—eliminating any sub-second race window during claim handoff!
 
 Open a second Cloud Shell tab (or stop `adk web` briefly) and apply `sandbox-policy.yaml`:
@@ -831,7 +833,7 @@ gcloud artifacts repositories delete agent-repo \
 
 ## Further Reading & Resources
 
-* [Kubernetes SIGs Agent Sandbox Repository (`kubernetes-sigs/agent-sandbox`)](https://github.com/kubernetes-sigs/agent-sandbox)
+* [Kubernetes SIGs Agent Sandbox Repository](https://github.com/kubernetes-sigs/agent-sandbox)
 * [GKE Agent Sandbox Official Documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/agent-sandbox)
 * [Google Agent Development Kit (ADK) Documentation](https://google.github.io/adk-docs/)
 * [gVisor Container Runtime Architecture](https://gvisor.dev/docs/)

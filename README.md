@@ -1,6 +1,6 @@
 # Hands-on with Agent Sandbox on Kubernetes
 
-Welcome to the repository for the **"Hands-on with Agent Sandbox on Kubernetes"** workshop, originally delivered at **[Cloud Native Days Norway 2026](https://2026.cloudnativedays.no/speaker/abdel-sghiouar)** by **Abdel Sghiouar** (Senior Cloud Developer Advocate @ Google & CNCF Ambassador).
+Welcome to the repository for the **"Hands-on with Agent Sandbox on Kubernetes"** workshop, originally delivered at **[Cloud Native Days Norway 2026](https://2026.cloudnativedays.no/speaker/abdel-sghiouar).
 
 ---
 
@@ -8,7 +8,7 @@ Welcome to the repository for the **"Hands-on with Agent Sandbox on Kubernetes"*
 
 As AI agents evolve from simple chatbots into autonomous systems capable of generating and executing code and manipulating data, they introduce significant security and operational challenges. Running LLM-generated code directly inside standard containers exposes your cluster to kernel exploits, lateral movement, and cloud credential theft.
 
-This hands-on workshop explores **[Agent Sandbox (`kubernetes-sigs/agent-sandbox`)](https://github.com/kubernetes-sigs/agent-sandbox)**—a Kubernetes-native solution designed to run non-deterministic, untrusted AI agent workloads safely and efficiently on Google Kubernetes Engine (GKE).
+This hands-on workshop explores **[Agent Sandbox (`kubernetes-sigs/agent-sandbox`)](https://github.com/kubernetes-sigs/agent-sandbox)**A Kubernetes-native solution designed to run non-deterministic, untrusted AI agent workloads safely and efficiently on Google Kubernetes Engine (GKE).
 
 ### What You Will Learn
 
